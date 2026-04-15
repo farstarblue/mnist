@@ -1,0 +1,17 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define INPUT_SIZE 784
+#define HIDDEN_SIZE 128
+#define OUTPUT_SIZE 10
+
+#define MNIST_ROWS 28
+#define MNIST_COLS 28
+#define TRAIN_SAMPLE_COUNT 60000
+#define TEST_SAMPLE_COUNT 10000
+
+#define DEFAULT_EPOCHS 3
+#define DEFAULT_BATCH_SIZE 64
+#define DEFAULT_LEARNING_RATE 0.01f
+
+#endif
