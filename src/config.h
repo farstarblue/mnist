@@ -10,8 +10,15 @@
 #define TRAIN_SAMPLE_COUNT 60000
 #define TEST_SAMPLE_COUNT 10000
 
-#define DEFAULT_EPOCHS 3
-#define DEFAULT_BATCH_SIZE 64
-#define DEFAULT_LEARNING_RATE 0.01f
+#define TRAIN_IMAGES_PATH "data/train-images-idx3-ubyte"
+#define TRAIN_LABELS_PATH "data/train-labels-idx1-ubyte"
+#define TEST_IMAGES_PATH "data/t10k-images-idx3-ubyte"
+#define TEST_LABELS_PATH "data/t10k-labels-idx1-ubyte"
+#define MODEL_HEADER_PATH "src/model_params.h"
+
+#define TRAIN_EPOCHS 3
+#define TRAIN_BATCH_SIZE 64
+#define TRAIN_LEARNING_RATE 0.01f
+#define TRAIN_RANDOM_SEED 42
 
 #endif

@@ -9,9 +9,11 @@
 - 隐藏层 `ReLU`，输出层 `Softmax`，损失函数为交叉熵
 - 小批量 SGD 训练
 - He 初始化，正态分布使用 Box-Muller 生成
+- 训练参数统一放在头文件 `src/config.h`
 - `make data` 自动下载并校验 MNIST 数据集
 - 训练完成后自动将参数导出到头文件 `src/model_params.h`
 - `make verify` 随机抽取测试集样本，显示字符画和预测结果
+- 训练时按 batch 实时输出进度
 - 提供独立的 RISC-V 交叉编译入口 `Makefile.riscv`
 
 ## 目录结构
@@ -46,19 +48,21 @@ make
 
 ### 3. 开始训练
 
-默认训练 3 个 epoch：
+训练参数位于 `src/config.h`，包括：
+
+- `TRAIN_EPOCHS`
+- `TRAIN_BATCH_SIZE`
+- `TRAIN_LEARNING_RATE`
+- `TRAIN_RANDOM_SEED`
+
+修改这些宏后，直接重新执行训练即可。默认训练 3 个 epoch：
 
 ```bash
 make train
 ```
 
-也可以自定义参数：
-
-```bash
-make train ARGS='--epochs 5 --batch-size 64 --learning-rate 0.01 --seed 42'
-```
-
 训练结束后会生成 `src/model_params.h`，随后 `verify` 会自动使用这份参数。
+训练过程中会在终端按 batch 刷新当前 epoch 的进度和 batch loss。
 
 ### 4. 随机验证
 
@@ -75,34 +79,55 @@ make verify
 
 ### 5. RISC-V 交叉编译
 
-如果需要保留现有本机构建流程，同时额外生成 RISC-V 版本，可使用独立的 `Makefile.riscv`：
+Linux 本机直接使用默认 `Makefile` 训练和验证。
+如果需要生成 RISC-V 版本，可使用独立的 `Makefile.riscv`：
 
 ```bash
 make -f Makefile.riscv
 ```
 
-默认使用的工具链前缀是 `riscv64-linux-gnu-`，可以按需覆盖：
+`Makefile.riscv` 会优先自动选择当前机器上可直接使用的 RISC-V bare-metal 工具链，依次尝试：
+
+- `riscv64-elf-gcc`
+- `riscv64-unknown-elf-gcc`
+
+也可以通过主 `Makefile` 的快捷目标调用：
 
 ```bash
-make -f Makefile.riscv CROSS_COMPILE=riscv64-unknown-elf-
+make riscv
+make riscv-train
+make riscv-verify
 ```
 
-如需指定架构或 ABI，可继续覆盖 `CFLAGS`：
+如需指定架构或 ABI，可覆盖 `CFLAGS`：
 
 ```bash
 make -f Makefile.riscv \
-  CROSS_COMPILE=riscv64-linux-gnu- \
   CFLAGS='-std=c99 -O3 -march=rv64gc -mabi=lp64d -Wall -Wextra -pedantic'
 ```
 
-RISC-V 交叉编译产物会输出到 `build-riscv/` 和 `bin-riscv/`，不会影响默认的 `build/` 与 `bin/`。由于生成的是目标架构二进制，`Makefile.riscv` 中的 `train` 和 `verify` 目标仅负责编译，不会在当前主机上直接运行。
+> 注意：RISC-V 交叉编译只生成目标架构可执行文件，不会在当前 x86 Linux 主机上直接运行。
+如果 `riscv64-elf-gcc` 与标准库/sysroot 是分开安装的，可以额外指定：
+
+```bash
+make -f Makefile.riscv SYSROOT=/path/to/riscv-sysroot
+```
+
+`Makefile.riscv` 不会使用 `riscv64-linux-gnu-gcc`；如果当前 bare-metal 工具链缺少标准库或 `sysroot`，请显式补齐对应 `SYSROOT`，或切换到可用的 `riscv64-elf-gcc` / `riscv64-unknown-elf-gcc`。
+
+产物输出到 `build-riscv/` 和 `bin-riscv/`，与 Linux 本机构建完全隔离，生成的 ELF 文件为：
+
+- `bin-riscv/train.elf`
+- `bin-riscv/verify.elf`
+
+> 注意：在 x86 Linux 主机上执行 `Makefile.riscv` 时只会生成 RISC-V 可执行文件；训练和验证需要把生成的程序放到 RISC-V 环境中运行。
 
 ## 可执行文件
 
 - `bin/train`：训练模型并导出参数头文件
 - `bin/verify`：随机验证一张测试图片
-- `bin-riscv/train`：RISC-V 版本训练程序
-- `bin-riscv/verify`：RISC-V 版本验证程序
+- `bin-riscv/train.elf`：RISC-V 版本训练程序
+- `bin-riscv/verify.elf`：RISC-V 版本验证程序
 
 ## 清理
 
@@ -115,5 +140,6 @@ make -f Makefile.riscv clean
 
 - 首次运行前请先执行 `make data`
 - `verify` 依赖 `src/model_params.h` 中的已训练参数，因此需要先执行 `make train`
+- 如需调整训练轮数、batch size、学习率或随机种子，请编辑 `src/config.h`
 - 默认目标是“项目尽量精简且好用”，因此实现上保持为最小可维护版本
 - `Makefile.riscv` 是独立扩展入口，用于保留现有 Makefile 的同时提供 RISC-V 交叉编译能力

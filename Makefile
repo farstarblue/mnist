@@ -14,9 +14,7 @@ COMMON_OBJS := $(BUILD_DIR)/mnist.o $(BUILD_DIR)/network.o
 TRAIN_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/model_io.o $(BUILD_DIR)/train.o
 VERIFY_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/verify.o
 
-ARGS ?=
-
-.PHONY: all data train verify clean
+.PHONY: all data train verify riscv riscv-train riscv-verify riscv-clean clean
 
 all: $(TRAIN_BIN) $(VERIFY_BIN)
 
@@ -24,11 +22,23 @@ data:
 	bash $(SCRIPT_DIR)/download_mnist.sh
 
 train: $(TRAIN_BIN) data
-	./$(TRAIN_BIN) $(ARGS)
+	./$(TRAIN_BIN)
 	@$(MAKE) --no-print-directory $(VERIFY_BIN)
 
 verify: $(VERIFY_BIN) data
-	./$(VERIFY_BIN) $(ARGS)
+	./$(VERIFY_BIN)
+
+riscv:
+	@$(MAKE) --no-print-directory -f Makefile.riscv all
+
+riscv-train:
+	@$(MAKE) --no-print-directory -f Makefile.riscv train
+
+riscv-verify:
+	@$(MAKE) --no-print-directory -f Makefile.riscv verify
+
+riscv-clean:
+	@$(MAKE) --no-print-directory -f Makefile.riscv clean
 
 clean:
 	rm -rf $(BUILD_DIR)/*.o $(TRAIN_BIN) $(VERIFY_BIN)
