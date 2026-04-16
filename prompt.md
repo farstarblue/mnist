@@ -54,9 +54,7 @@
 
 ### 7. RISC-V 交叉编译扩展
 
-- 保留现有 `Makefile` 不变
-- 额外提供独立的 `Makefile.riscv`
-- 默认通过 `CROSS_COMPILE ?= riscv64-linux-gnu-` 组合出交叉编译器
+- linux下使用gcc, 而riscv使用riscv64-elf-gcc交叉编译
 - RISC-V 编译中间文件输出到 `build-riscv/`
 - RISC-V 可执行文件输出到 `bin-riscv/`
 - 交叉编译目标以“只编译、不直接运行”为主，避免在非 RISC-V 主机上误执行目标程序
