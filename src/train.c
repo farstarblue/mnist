@@ -93,7 +93,7 @@ int main(void) {
 
     for (epoch = 0; epoch < epochs; ++epoch) {
         float epoch_loss = 0.0f;
-        float hidden[HIDDEN_SIZE];
+        float features[FEATURE_SIZE];
         float logits[OUTPUT_SIZE];
         float probabilities[OUTPUT_SIZE];
         int batch_start = 0;
@@ -117,8 +117,8 @@ int main(void) {
                 const float *input = train_set.images + (size_t)sample_index * INPUT_SIZE;
                 unsigned char label = train_set.labels[sample_index];
 
-                network_forward(&network, input, hidden, logits, probabilities);
-                batch_loss += network_accumulate_gradients(&network, input, label, hidden, probabilities);
+                network_forward(&network, input, features, logits, probabilities);
+                batch_loss += network_accumulate_gradients(&network, input, label, features, probabilities);
             }
             epoch_loss += batch_loss;
             network_apply_gradients(&network, learning_rate, batch_count);

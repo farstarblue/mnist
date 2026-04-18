@@ -32,10 +32,10 @@ int save_model_header(const char *output_path, const Network *network) {
     fprintf(file, "#include \"config.h\"\n\n");
     fprintf(file, "#define MODEL_PARAMS_TRAINED 1\n\n");
 
-    write_float_array(file, "MODEL_W1", network->w1, INPUT_SIZE * HIDDEN_SIZE);
-    write_float_array(file, "MODEL_B1", network->b1, HIDDEN_SIZE);
-    write_float_array(file, "MODEL_W2", network->w2, HIDDEN_SIZE * OUTPUT_SIZE);
-    write_float_array(file, "MODEL_B2", network->b2, OUTPUT_SIZE);
+    write_float_array(file, "MODEL_CONV_W", network->conv_w, CONV_OUT_CHANNELS * CONV_KERNEL_SIZE * CONV_KERNEL_SIZE);
+    write_float_array(file, "MODEL_CONV_B", network->conv_b, CONV_OUT_CHANNELS);
+    write_float_array(file, "MODEL_FC_W", network->fc_w, FEATURE_SIZE * OUTPUT_SIZE);
+    write_float_array(file, "MODEL_FC_B", network->fc_b, OUTPUT_SIZE);
 
     fprintf(file, "#endif\n");
     fclose(file);

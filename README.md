@@ -5,13 +5,13 @@
 ## 特性
 
 - 纯 C 实现，不依赖任何第三方库
-- 三层全连接网络：`784 -> 128 -> 10`
-- 隐藏层 `ReLU`，输出层 `Softmax`，损失函数为交叉熵
+- 精简 CNN：`3x3 Conv(8) -> ReLU -> FC(5408 -> 10)`
+- 卷积层使用 `ReLU`，输出层 `Softmax`，损失函数为交叉熵
 - 小批量 SGD 训练
 - He 初始化，正态分布使用 Box-Muller 生成
 - 训练参数统一放在头文件 `src/config.h`
 - `make data` 自动下载并校验 MNIST 数据集
-- 训练完成后自动将参数导出到头文件 `src/model_params.h`
+- 训练完成后自动将 CNN 参数导出到头文件 `src/model_params.h`
 - `make verify` 随机抽取测试集样本，显示字符画和预测结果
 - 训练时按 batch 实时输出进度
 - 提供独立的 RISC-V 交叉编译入口 `Makefile.riscv`
@@ -61,7 +61,7 @@ make
 make train
 ```
 
-训练结束后会生成 `src/model_params.h`，随后 `verify` 会自动使用这份参数。
+训练结束后会生成 `src/model_params.h`，随后 `verify` 会自动使用这份 CNN 参数。
 训练过程中会在终端按 batch 刷新当前 epoch 的进度和 batch loss。
 
 ### 4. 随机验证
@@ -110,7 +110,7 @@ make riscv-verify-vector
 - scalar 版本使用 `-march=rv64gc_zicsr -mabi=lp64d`
 - vector 版本使用 `-march=rv64gcv_zicsr -mabi=lp64d`
 - 4 个 RISC-V ELF 默认都会静态链接，便于直接通过 `spike pk` 加载
-- vector 版本在 `src/network.c` 的热点计算路径中显式使用 RVV intrinsics，因此会生成真实的 RVV 指令，而不是仅依赖编译器自动向量化
+- vector 版本在 `src/network.c` 中显式包含 `riscv_vector.h`，并对卷积/全连接点积热点使用 RVV intrinsics，因此会生成真实的 RVV 指令，而不是仅依赖编译器自动向量化
 
 如需覆盖架构或 ABI，可传入：
 
@@ -162,7 +162,8 @@ make -f Makefile.riscv clean
 ## 说明
 
 - 首次运行前请先执行 `make data`
-- `verify` 依赖 `src/model_params.h` 中的已训练参数，因此需要先执行 `make train`
+- `verify` 依赖 `src/model_params.h` 中的已训练 CNN 参数，因此需要先执行 `make train`
+- 仓库默认提交的 `src/model_params.h` 只是占位头文件，用于保证新结构可编译；执行训练后会被真实参数覆盖
 - 如需调整训练轮数、batch size、学习率或随机种子，请编辑 `src/config.h`
 - 默认目标是“项目尽量精简且好用”，因此实现上保持为最小可维护版本
 - `Makefile.riscv` 是独立扩展入口，用于保留现有 Makefile 的同时提供 RISC-V 交叉编译能力

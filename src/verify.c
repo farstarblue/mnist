@@ -33,7 +33,7 @@ static void print_ascii_image(const float *image) {
 int main(void) {
     MnistDataset test_set;
     Network network;
-    float hidden[HIDDEN_SIZE];
+    float features[FEATURE_SIZE];
     float logits[OUTPUT_SIZE];
     float probabilities[OUTPUT_SIZE];
     int sample_index = 0;
@@ -64,13 +64,13 @@ int main(void) {
     if (network_init(&network) != 0) {
         goto cleanup;
     }
-    network_load_parameters(&network, MODEL_W1, MODEL_B1, MODEL_W2, MODEL_B2);
+    network_load_parameters(&network, MODEL_CONV_W, MODEL_CONV_B, MODEL_FC_W, MODEL_FC_B);
 
     srand((unsigned int)seed);
     sample_index = rand() % (int)test_set.count;
     prediction = network_predict(&network,
                                  test_set.images + (size_t)sample_index * INPUT_SIZE,
-                                 hidden,
+                                 features,
                                  logits,
                                  probabilities);
 
