@@ -39,22 +39,30 @@ int main(void) {
     int sample_index = 0;
     int prediction = 0;
     int seed = (int)time(NULL);
+    int status = 1;
+#if defined(__riscv)
+    unsigned long long start = 0;
+    unsigned long long end = 0;
+#endif
 
     memset(&test_set, 0, sizeof(test_set));
     memset(&network, 0, sizeof(network));
 
+#if defined(__riscv)
+    __asm__ __volatile__("csrr %0, 0xc02" : "=r"(start) :: "memory");
+#endif
+
     if (!MODEL_PARAMS_TRAINED) {
         fprintf(stderr, "尚未生成模型参数，请先执行 make train。\n");
-        return 1;
+        goto cleanup;
     }
 
     if (load_mnist_dataset(TEST_IMAGES_PATH, TEST_LABELS_PATH, TEST_SAMPLE_COUNT, &test_set) != 0) {
-        return 1;
+        goto cleanup;
     }
 
     if (network_init(&network) != 0) {
-        free_mnist_dataset(&test_set);
-        return 1;
+        goto cleanup;
     }
     network_load_parameters(&network, MODEL_W1, MODEL_B1, MODEL_W2, MODEL_B2);
 
@@ -72,8 +80,14 @@ int main(void) {
     print_ascii_image(test_set.images + (size_t)sample_index * INPUT_SIZE);
     printf("\n预测结果: %d\n", prediction);
     printf("判定: %s\n", prediction == test_set.labels[sample_index] ? "CORRECT" : "WRONG");
+    status = 0;
 
+cleanup:
+#if defined(__riscv)
+    __asm__ __volatile__("csrr %0, 0xc02" : "=r"(end) :: "memory");
+    printf("instret delta (main): %llu\n", end - start);
+#endif
     network_free(&network);
     free_mnist_dataset(&test_set);
-    return 0;
+    return status;
 }

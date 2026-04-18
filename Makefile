@@ -14,7 +14,7 @@ COMMON_OBJS := $(BUILD_DIR)/mnist.o $(BUILD_DIR)/network.o
 TRAIN_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/model_io.o $(BUILD_DIR)/train.o
 VERIFY_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/verify.o
 
-.PHONY: all data train verify riscv riscv-train riscv-verify riscv-clean clean
+.PHONY: all data train verify riscv riscv-train riscv-verify riscv-train-scalar riscv-train-vector riscv-verify-scalar riscv-verify-vector riscv-clean clean
 
 all: $(TRAIN_BIN) $(VERIFY_BIN)
 
@@ -36,6 +36,18 @@ riscv-train:
 
 riscv-verify:
 	@$(MAKE) --no-print-directory -f Makefile.riscv verify
+
+riscv-train-scalar:
+	@$(MAKE) --no-print-directory -f Makefile.riscv train-scalar
+
+riscv-train-vector:
+	@$(MAKE) --no-print-directory -f Makefile.riscv train-vector
+
+riscv-verify-scalar:
+	@$(MAKE) --no-print-directory -f Makefile.riscv verify-scalar
+
+riscv-verify-vector:
+	@$(MAKE) --no-print-directory -f Makefile.riscv verify-vector
 
 riscv-clean:
 	@$(MAKE) --no-print-directory -f Makefile.riscv clean

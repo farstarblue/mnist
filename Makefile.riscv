@@ -1,21 +1,36 @@
 CC := riscv64-unknown-elf-gcc
 CPPFLAGS :=
-CFLAGS := -std=c99 -O3 -Wall -Wextra -pedantic
+COMMON_CFLAGS := -std=c99 -O3 -Wall -Wextra -pedantic
 LDFLAGS :=
 LDLIBS := -lc -lm
 SYSROOT ?= /usr/riscv64-linux-gnu
 DYNAMIC_LINKER ?= /lib/ld-linux-riscv64-lp64d.so.1
+SCALAR_ARCH ?= rv64gc_zicsr
+VECTOR_ARCH ?= rv64gcv_zicsr
+ABI ?= lp64d
 
 SRC_DIR := src
 BUILD_DIR := build-riscv
 BIN_DIR := bin-riscv
 
-TRAIN_BIN := $(BIN_DIR)/train.elf
-VERIFY_BIN := $(BIN_DIR)/verify.elf
+SCALAR_BUILD_DIR := $(BUILD_DIR)/scalar
+VECTOR_BUILD_DIR := $(BUILD_DIR)/vector
 
-COMMON_OBJS := $(BUILD_DIR)/mnist.o $(BUILD_DIR)/network.o
-TRAIN_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/model_io.o $(BUILD_DIR)/train.o
-VERIFY_OBJS := $(COMMON_OBJS) $(BUILD_DIR)/verify.o
+SCALAR_CFLAGS := $(COMMON_CFLAGS) -march=$(SCALAR_ARCH) -mabi=$(ABI)
+VECTOR_CFLAGS := $(COMMON_CFLAGS) -march=$(VECTOR_ARCH) -mabi=$(ABI)
+
+TRAIN_SCALAR_BIN := $(BIN_DIR)/train-scalar.elf
+VERIFY_SCALAR_BIN := $(BIN_DIR)/verify-scalar.elf
+TRAIN_VECTOR_BIN := $(BIN_DIR)/train-vector.elf
+VERIFY_VECTOR_BIN := $(BIN_DIR)/verify-vector.elf
+
+SCALAR_COMMON_OBJS := $(SCALAR_BUILD_DIR)/mnist.o $(SCALAR_BUILD_DIR)/network.o
+SCALAR_TRAIN_OBJS := $(SCALAR_COMMON_OBJS) $(SCALAR_BUILD_DIR)/model_io.o $(SCALAR_BUILD_DIR)/train.o
+SCALAR_VERIFY_OBJS := $(SCALAR_COMMON_OBJS) $(SCALAR_BUILD_DIR)/verify.o
+
+VECTOR_COMMON_OBJS := $(VECTOR_BUILD_DIR)/mnist.o $(VECTOR_BUILD_DIR)/network.o
+VECTOR_TRAIN_OBJS := $(VECTOR_COMMON_OBJS) $(VECTOR_BUILD_DIR)/model_io.o $(VECTOR_BUILD_DIR)/train.o
+VECTOR_VERIFY_OBJS := $(VECTOR_COMMON_OBJS) $(VECTOR_BUILD_DIR)/verify.o
 
 ifneq ($(strip $(SYSROOT)),)
 CPPFLAGS += -I$(SYSROOT)/include
@@ -28,20 +43,34 @@ CRTEND := $(strip $(shell $(CC) -print-file-name=crtend.o 2>/dev/null))
 STARTFILES := $(SYSROOT)/lib/crt1.o $(SYSROOT)/lib/crti.o $(CRTBEGIN)
 ENDFILES := $(CRTEND) $(SYSROOT)/lib/crtn.o
 
-.PHONY: all train verify clean check-toolchain
+.PHONY: all train verify train-scalar train-vector verify-scalar verify-vector clean check-toolchain
 
-all: check-toolchain $(TRAIN_BIN) $(VERIFY_BIN)
+all: check-toolchain $(TRAIN_SCALAR_BIN) $(VERIFY_SCALAR_BIN) $(TRAIN_VECTOR_BIN) $(VERIFY_VECTOR_BIN)
 
-train: check-toolchain $(TRAIN_BIN)
-	@printf '已生成 RISC-V 训练程序: %s\n' "$(TRAIN_BIN)"
+train: train-scalar train-vector
+
+verify: verify-scalar verify-vector
+
+train-scalar: check-toolchain $(TRAIN_SCALAR_BIN)
+	@printf '已生成 RISC-V 训练程序: %s\n' "$(TRAIN_SCALAR_BIN)"
 	@printf '请将其放到 RISC-V 环境中运行。\n'
 
-verify: check-toolchain $(VERIFY_BIN)
-	@printf '已生成 RISC-V 验证程序: %s\n' "$(VERIFY_BIN)"
+train-vector: check-toolchain $(TRAIN_VECTOR_BIN)
+	@printf '已生成 RISC-V 训练程序: %s\n' "$(TRAIN_VECTOR_BIN)"
+	@printf '请将其放到 RISC-V 环境中运行。\n'
+
+verify-scalar: check-toolchain $(VERIFY_SCALAR_BIN)
+	@printf '已生成 RISC-V 验证程序: %s\n' "$(VERIFY_SCALAR_BIN)"
+	@printf '请将其放到 RISC-V 环境中运行。\n'
+
+verify-vector: check-toolchain $(VERIFY_VECTOR_BIN)
+	@printf '已生成 RISC-V 验证程序: %s\n' "$(VERIFY_VECTOR_BIN)"
 	@printf '请将其放到 RISC-V 环境中运行。\n'
 
 clean:
-	rm -rf $(BUILD_DIR)/*.o $(TRAIN_BIN) $(VERIFY_BIN)
+	rm -rf $(SCALAR_BUILD_DIR) $(VECTOR_BUILD_DIR) \
+		$(TRAIN_SCALAR_BIN) $(VERIFY_SCALAR_BIN) \
+		$(TRAIN_VECTOR_BIN) $(VERIFY_VECTOR_BIN)
 
 check-toolchain:
 	@command -v $(CC) >/dev/null 2>&1 || { \
@@ -68,34 +97,58 @@ check-toolchain:
 		printf '%s 缺少可用的 GCC 运行时文件。\n' "$(CC)"; \
 		exit 1; \
 	}
-	@printf '#include <stdio.h>\n' | $(CC) $(CPPFLAGS) $(CFLAGS) -x c -E - >/dev/null 2>&1 || { \
+	@printf '#include <stdio.h>\n' | $(CC) $(CPPFLAGS) $(COMMON_CFLAGS) -march=$(SCALAR_ARCH) -mabi=$(ABI) -x c -E - >/dev/null 2>&1 || { \
 		printf '当前 %s 无法通过 SYSROOT=%s 找到标准头文件。\n' "$(CC)" "$(SYSROOT)"; \
 		exit 1; \
 	}
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+$(SCALAR_BUILD_DIR):
+	mkdir -p $(SCALAR_BUILD_DIR)
+
+$(VECTOR_BUILD_DIR):
+	mkdir -p $(VECTOR_BUILD_DIR)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
-$(BUILD_DIR)/mnist.o: $(SRC_DIR)/mnist.c $(SRC_DIR)/mnist.h $(SRC_DIR)/config.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(SCALAR_BUILD_DIR)/mnist.o: $(SRC_DIR)/mnist.c $(SRC_DIR)/mnist.h $(SRC_DIR)/config.h | $(SCALAR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(SCALAR_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/network.o: $(SRC_DIR)/network.c $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(SCALAR_BUILD_DIR)/network.o: $(SRC_DIR)/network.c $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(SCALAR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(SCALAR_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/model_io.o: $(SRC_DIR)/model_io.c $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(SCALAR_BUILD_DIR)/model_io.o: $(SRC_DIR)/model_io.c $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(SCALAR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(SCALAR_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/train.o: $(SRC_DIR)/train.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(SCALAR_BUILD_DIR)/train.o: $(SRC_DIR)/train.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h | $(SCALAR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(SCALAR_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/verify.o: $(SRC_DIR)/verify.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_params.h $(SRC_DIR)/network.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+$(SCALAR_BUILD_DIR)/verify.o: $(SRC_DIR)/verify.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_params.h $(SRC_DIR)/network.h | $(SCALAR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(SCALAR_CFLAGS) -c $< -o $@
 
-$(TRAIN_BIN): $(TRAIN_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(TRAIN_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+$(VECTOR_BUILD_DIR)/mnist.o: $(SRC_DIR)/mnist.c $(SRC_DIR)/mnist.h $(SRC_DIR)/config.h | $(VECTOR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
 
-$(VERIFY_BIN): $(VERIFY_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VERIFY_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+$(VECTOR_BUILD_DIR)/network.o: $(SRC_DIR)/network.c $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(VECTOR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
+
+$(VECTOR_BUILD_DIR)/model_io.o: $(SRC_DIR)/model_io.c $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h $(SRC_DIR)/config.h | $(VECTOR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
+
+$(VECTOR_BUILD_DIR)/train.o: $(SRC_DIR)/train.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_io.h $(SRC_DIR)/network.h | $(VECTOR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
+
+$(VECTOR_BUILD_DIR)/verify.o: $(SRC_DIR)/verify.c $(SRC_DIR)/config.h $(SRC_DIR)/mnist.h $(SRC_DIR)/model_params.h $(SRC_DIR)/network.h | $(VECTOR_BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
+
+$(TRAIN_SCALAR_BIN): $(SCALAR_TRAIN_OBJS) | $(BIN_DIR)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_TRAIN_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+
+$(VERIFY_SCALAR_BIN): $(SCALAR_VERIFY_OBJS) | $(BIN_DIR)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_VERIFY_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+
+$(TRAIN_VECTOR_BIN): $(VECTOR_TRAIN_OBJS) | $(BIN_DIR)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_TRAIN_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+
+$(VERIFY_VECTOR_BIN): $(VECTOR_VERIFY_OBJS) | $(BIN_DIR)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_VERIFY_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)

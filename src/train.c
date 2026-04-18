@@ -47,10 +47,18 @@ int main(void) {
     int epoch = 0;
     int index = 0;
     int status = 1;
+#if defined(__riscv)
+    unsigned long long start = 0;
+    unsigned long long end = 0;
+#endif
 
     memset(&train_set, 0, sizeof(train_set));
     memset(&test_set, 0, sizeof(test_set));
     memset(&network, 0, sizeof(network));
+
+#if defined(__riscv)
+    __asm__ __volatile__("csrr %0, 0xc02" : "=r"(start) :: "memory");
+#endif
 
     if (validate_training_config() != 0) {
         goto cleanup;
@@ -142,6 +150,10 @@ int main(void) {
     status = 0;
 
 cleanup:
+#if defined(__riscv)
+    __asm__ __volatile__("csrr %0, 0xc02" : "=r"(end) :: "memory");
+    printf("instret delta (main): %llu\n", end - start);
+#endif
     free(indices);
     network_free(&network);
     free_mnist_dataset(&train_set);

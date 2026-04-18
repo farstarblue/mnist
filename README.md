@@ -86,24 +86,38 @@ Linux 本机直接使用默认 `Makefile` 训练和验证。
 make -f Makefile.riscv
 ```
 
-`Makefile.riscv` 会优先自动选择当前机器上可直接使用的 RISC-V bare-metal 工具链，依次尝试：
-
-- `riscv64-elf-gcc`
-- `riscv64-unknown-elf-gcc`
-
 也可以通过主 `Makefile` 的快捷目标调用：
 
 ```bash
 make riscv
 make riscv-train
 make riscv-verify
+make riscv-train-scalar
+make riscv-train-vector
+make riscv-verify-scalar
+make riscv-verify-vector
 ```
 
-如需指定架构或 ABI，可覆盖 `CFLAGS`：
+默认会同时生成 4 个 RISC-V ELF：
+
+- `bin-riscv/train-scalar.elf`
+- `bin-riscv/verify-scalar.elf`
+- `bin-riscv/train-vector.elf`
+- `bin-riscv/verify-vector.elf`
+
+其中：
+
+- scalar 版本使用 `-march=rv64gc_zicsr -mabi=lp64d`
+- vector 版本使用 `-march=rv64gcv_zicsr -mabi=lp64d`
+- vector 版本在 `src/network.c` 的热点计算路径中显式使用 RVV intrinsics，因此会生成真实的 RVV 指令，而不是仅依赖编译器自动向量化
+
+如需覆盖架构或 ABI，可传入：
 
 ```bash
 make -f Makefile.riscv \
-  CFLAGS='-std=c99 -O3 -march=rv64gc -mabi=lp64d -Wall -Wextra -pedantic'
+  SCALAR_ARCH=rv64gc_zicsr \
+  VECTOR_ARCH=rv64gcv_zicsr \
+  ABI=lp64d
 ```
 
 > 注意：RISC-V 交叉编译只生成目标架构可执行文件，不会在当前 x86 Linux 主机上直接运行。
@@ -115,10 +129,7 @@ make -f Makefile.riscv SYSROOT=/path/to/riscv-sysroot
 
 `Makefile.riscv` 不会使用 `riscv64-linux-gnu-gcc`；如果当前 bare-metal 工具链缺少标准库或 `sysroot`，请显式补齐对应 `SYSROOT`，或切换到可用的 `riscv64-elf-gcc` / `riscv64-unknown-elf-gcc`。
 
-产物输出到 `build-riscv/` 和 `bin-riscv/`，与 Linux 本机构建完全隔离，生成的 ELF 文件为：
-
-- `bin-riscv/train.elf`
-- `bin-riscv/verify.elf`
+产物输出到 `build-riscv/` 和 `bin-riscv/`，与 Linux 本机构建完全隔离。`build-riscv/` 下会按 `scalar/` 和 `vector/` 分开保存目标文件，避免两套编译参数互相覆盖。
 
 > 注意：在 x86 Linux 主机上执行 `Makefile.riscv` 时只会生成 RISC-V 可执行文件；训练和验证需要把生成的程序放到 RISC-V 环境中运行。
 
@@ -126,8 +137,10 @@ make -f Makefile.riscv SYSROOT=/path/to/riscv-sysroot
 
 - `bin/train`：训练模型并导出参数头文件
 - `bin/verify`：随机验证一张测试图片
-- `bin-riscv/train.elf`：RISC-V 版本训练程序
-- `bin-riscv/verify.elf`：RISC-V 版本验证程序
+- `bin-riscv/train-scalar.elf`：RISC-V 标量版训练程序
+- `bin-riscv/verify-scalar.elf`：RISC-V 标量版验证程序
+- `bin-riscv/train-vector.elf`：RISC-V 向量版训练程序
+- `bin-riscv/verify-vector.elf`：RISC-V 向量版验证程序
 
 ## 清理
 
@@ -143,3 +156,4 @@ make -f Makefile.riscv clean
 - 如需调整训练轮数、batch size、学习率或随机种子，请编辑 `src/config.h`
 - 默认目标是“项目尽量精简且好用”，因此实现上保持为最小可维护版本
 - `Makefile.riscv` 是独立扩展入口，用于保留现有 Makefile 的同时提供 RISC-V 交叉编译能力
+- RISC-V 版本会在 `train` 与 `verify` 的 `main` 前后读取 `instret` CSR，并打印 `instret delta (main)`

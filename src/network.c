@@ -7,6 +7,10 @@
 #include <string.h>
 #include "config.h"
 
+#if defined(__riscv_vector)
+#include <riscv_vector.h>
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -25,6 +29,74 @@ static float normal_random(void) {
 
 static float relu(float value) {
     return value > 0.0f ? value : 0.0f;
+}
+
+#if defined(__riscv_vector)
+static float dot_product_rvv(const float *lhs, const float *rhs, int count) {
+    int index = 0;
+    size_t vl = 0;
+    vfloat32m1_t accumulator = __riscv_vfmv_v_f_f32m1(0.0f, 1);
+
+    for (index = 0; index < count; index += (int)vl) {
+        vfloat32m1_t lhs_vector;
+        vfloat32m1_t rhs_vector;
+
+        vl = __riscv_vsetvl_e32m1((size_t)(count - index));
+        lhs_vector = __riscv_vle32_v_f32m1(lhs + index, vl);
+        rhs_vector = __riscv_vle32_v_f32m1(rhs + index, vl);
+        accumulator = __riscv_vfmacc_vv_f32m1(accumulator, lhs_vector, rhs_vector, vl);
+    }
+
+    {
+        vfloat32m1_t zero = __riscv_vfmv_v_f_f32m1(0.0f, 1);
+        vfloat32m1_t reduced = __riscv_vfredusum_vs_f32m1_f32m1(accumulator, zero, 1);
+        return __riscv_vfmv_f_s_f32m1_f32(reduced);
+    }
+}
+
+static void axpy_inplace_rvv(float *dst, const float *src, float alpha, int count) {
+    int index = 0;
+    size_t vl = 0;
+
+    for (index = 0; index < count; index += (int)vl) {
+        vfloat32m1_t dst_vector;
+        vfloat32m1_t src_vector;
+
+        vl = __riscv_vsetvl_e32m1((size_t)(count - index));
+        dst_vector = __riscv_vle32_v_f32m1(dst + index, vl);
+        src_vector = __riscv_vle32_v_f32m1(src + index, vl);
+        dst_vector = __riscv_vfmacc_vf_f32m1(dst_vector, alpha, src_vector, vl);
+        __riscv_vse32_v_f32m1(dst + index, dst_vector, vl);
+    }
+}
+#endif
+
+static float dot_product(const float *lhs, const float *rhs, int count) {
+    int index = 0;
+    float sum = 0.0f;
+
+#if defined(__riscv_vector)
+    return dot_product_rvv(lhs, rhs, count);
+#endif
+
+    for (index = 0; index < count; ++index) {
+        sum += lhs[index] * rhs[index];
+    }
+
+    return sum;
+}
+
+static void axpy_inplace(float *dst, const float *src, float alpha, int count) {
+    int index = 0;
+
+#if defined(__riscv_vector)
+    axpy_inplace_rvv(dst, src, alpha, count);
+    return;
+#endif
+
+    for (index = 0; index < count; ++index) {
+        dst[index] += alpha * src[index];
+    }
 }
 
 static void softmax(const float *logits, float *probabilities) {
@@ -117,15 +189,12 @@ void network_forward(const Network *network,
                      float *probabilities) {
     int hidden_index = 0;
     int output_index = 0;
-    int input_index = 0;
 
     for (hidden_index = 0; hidden_index < HIDDEN_SIZE; ++hidden_index) {
         float sum = network->b1[hidden_index];
         const float *weights = network->w1 + (size_t)hidden_index * INPUT_SIZE;
 
-        for (input_index = 0; input_index < INPUT_SIZE; ++input_index) {
-            sum += weights[input_index] * input[input_index];
-        }
+        sum += dot_product(weights, input, INPUT_SIZE);
 
         hidden[hidden_index] = relu(sum);
     }
@@ -134,9 +203,7 @@ void network_forward(const Network *network,
         float sum = network->b2[output_index];
         const float *weights = network->w2 + (size_t)output_index * HIDDEN_SIZE;
 
-        for (hidden_index = 0; hidden_index < HIDDEN_SIZE; ++hidden_index) {
-            sum += weights[hidden_index] * hidden[hidden_index];
-        }
+        sum += dot_product(weights, hidden, HIDDEN_SIZE);
 
         logits[output_index] = sum;
     }
@@ -154,7 +221,6 @@ float network_accumulate_gradients(Network *network,
     float loss = 0.0f;
     int output_index = 0;
     int hidden_index = 0;
-    int input_index = 0;
 
     for (output_index = 0; output_index < OUTPUT_SIZE; ++output_index) {
         output_delta[output_index] = probabilities[output_index] - (output_index == (int)label ? 1.0f : 0.0f);
@@ -167,9 +233,7 @@ float network_accumulate_gradients(Network *network,
         float *weights_grad = network->dw2 + (size_t)output_index * HIDDEN_SIZE;
 
         network->db2[output_index] += delta;
-        for (hidden_index = 0; hidden_index < HIDDEN_SIZE; ++hidden_index) {
-            weights_grad[hidden_index] += delta * hidden[hidden_index];
-        }
+        axpy_inplace(weights_grad, hidden, delta, HIDDEN_SIZE);
     }
 
     for (hidden_index = 0; hidden_index < HIDDEN_SIZE; ++hidden_index) {
@@ -182,9 +246,7 @@ float network_accumulate_gradients(Network *network,
         hidden_delta[hidden_index] = hidden[hidden_index] > 0.0f ? gradient : 0.0f;
         network->db1[hidden_index] += hidden_delta[hidden_index];
 
-        for (input_index = 0; input_index < INPUT_SIZE; ++input_index) {
-            network->dw1[(size_t)hidden_index * INPUT_SIZE + input_index] += hidden_delta[hidden_index] * input[input_index];
-        }
+        axpy_inplace(network->dw1 + (size_t)hidden_index * INPUT_SIZE, input, hidden_delta[hidden_index], INPUT_SIZE);
     }
 
     return loss;
@@ -192,23 +254,11 @@ float network_accumulate_gradients(Network *network,
 
 void network_apply_gradients(Network *network, float learning_rate, int batch_size) {
     float scale = learning_rate / (float)batch_size;
-    size_t i = 0;
 
-    for (i = 0; i < INPUT_SIZE * HIDDEN_SIZE; ++i) {
-        network->w1[i] -= scale * network->dw1[i];
-    }
-
-    for (i = 0; i < HIDDEN_SIZE; ++i) {
-        network->b1[i] -= scale * network->db1[i];
-    }
-
-    for (i = 0; i < HIDDEN_SIZE * OUTPUT_SIZE; ++i) {
-        network->w2[i] -= scale * network->dw2[i];
-    }
-
-    for (i = 0; i < OUTPUT_SIZE; ++i) {
-        network->b2[i] -= scale * network->db2[i];
-    }
+    axpy_inplace(network->w1, network->dw1, -scale, INPUT_SIZE * HIDDEN_SIZE);
+    axpy_inplace(network->b1, network->db1, -scale, HIDDEN_SIZE);
+    axpy_inplace(network->w2, network->dw2, -scale, HIDDEN_SIZE * OUTPUT_SIZE);
+    axpy_inplace(network->b2, network->db2, -scale, OUTPUT_SIZE);
 }
 
 int network_predict(const Network *network,
