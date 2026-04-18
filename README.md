@@ -109,6 +109,7 @@ make riscv-verify-vector
 
 - scalar 版本使用 `-march=rv64gc_zicsr -mabi=lp64d`
 - vector 版本使用 `-march=rv64gcv_zicsr -mabi=lp64d`
+- 4 个 RISC-V ELF 默认都会静态链接，便于直接通过 `spike pk` 加载
 - vector 版本在 `src/network.c` 的热点计算路径中显式使用 RVV intrinsics，因此会生成真实的 RVV 指令，而不是仅依赖编译器自动向量化
 
 如需覆盖架构或 ABI，可传入：
@@ -132,6 +133,15 @@ make -f Makefile.riscv SYSROOT=/path/to/riscv-sysroot
 产物输出到 `build-riscv/` 和 `bin-riscv/`，与 Linux 本机构建完全隔离。`build-riscv/` 下会按 `scalar/` 和 `vector/` 分开保存目标文件，避免两套编译参数互相覆盖。
 
 > 注意：在 x86 Linux 主机上执行 `Makefile.riscv` 时只会生成 RISC-V 可执行文件；训练和验证需要把生成的程序放到 RISC-V 环境中运行。
+
+如果使用 `spike pk`，可直接运行静态产物，例如：
+
+```bash
+spike pk bin-riscv/verify-scalar.elf
+spike pk bin-riscv/verify-vector.elf
+spike pk bin-riscv/train-scalar.elf
+spike pk bin-riscv/train-vector.elf
+```
 
 ## 可执行文件
 

@@ -2,9 +2,8 @@ CC := riscv64-unknown-elf-gcc
 CPPFLAGS :=
 COMMON_CFLAGS := -std=c99 -O3 -Wall -Wextra -pedantic
 LDFLAGS :=
-LDLIBS := -lc -lm
+LDLIBS :=
 SYSROOT ?= /usr/riscv64-linux-gnu
-DYNAMIC_LINKER ?= /lib/ld-linux-riscv64-lp64d.so.1
 SCALAR_ARCH ?= rv64gc_zicsr
 VECTOR_ARCH ?= rv64gcv_zicsr
 ABI ?= lp64d
@@ -34,14 +33,17 @@ VECTOR_VERIFY_OBJS := $(VECTOR_COMMON_OBJS) $(VECTOR_BUILD_DIR)/verify.o
 
 ifneq ($(strip $(SYSROOT)),)
 CPPFLAGS += -I$(SYSROOT)/include
-LDFLAGS += -L$(SYSROOT)/lib -Wl,-dynamic-linker,$(DYNAMIC_LINKER)
+LDFLAGS += -Wl,--no-dynamic-linker
 endif
 
 LIBGCC := $(strip $(shell $(CC) -print-libgcc-file-name 2>/dev/null))
 CRTBEGIN := $(strip $(shell $(CC) -print-file-name=crtbegin.o 2>/dev/null))
 CRTEND := $(strip $(shell $(CC) -print-file-name=crtend.o 2>/dev/null))
+LIBC_STATIC := $(SYSROOT)/lib/libc.a
+LIBM_STATIC := $(SYSROOT)/lib/libm.a
 STARTFILES := $(SYSROOT)/lib/crt1.o $(SYSROOT)/lib/crti.o $(CRTBEGIN)
 ENDFILES := $(CRTEND) $(SYSROOT)/lib/crtn.o
+STATIC_LIBS := $(LIBC_STATIC) $(LIBM_STATIC) $(LIBGCC)
 
 .PHONY: all train verify train-scalar train-vector verify-scalar verify-vector clean check-toolchain
 
@@ -89,8 +91,12 @@ check-toolchain:
 		printf 'SYSROOT 缺少启动文件: %s\n' "$(SYSROOT)/lib/crt1.o"; \
 		exit 1; \
 	}
-	@[ -r "$(SYSROOT)/lib/libc.so" ] || [ -r "$(SYSROOT)/lib/libc.a" ] || { \
-		printf 'SYSROOT 缺少 C 运行库: %s/lib/libc.so\n' "$(SYSROOT)"; \
+	@[ -r "$(LIBC_STATIC)" ] || { \
+		printf 'SYSROOT 缺少静态 C 运行库: %s\n' "$(LIBC_STATIC)"; \
+		exit 1; \
+	}
+	@[ -r "$(LIBM_STATIC)" ] || { \
+		printf 'SYSROOT 缺少静态数学库: %s\n' "$(LIBM_STATIC)"; \
 		exit 1; \
 	}
 	@[ -n "$(LIBGCC)" ] && [ -r "$(LIBGCC)" ] && [ -r "$(CRTBEGIN)" ] && [ -r "$(CRTEND)" ] || { \
@@ -142,13 +148,13 @@ $(VECTOR_BUILD_DIR)/verify.o: $(SRC_DIR)/verify.c $(SRC_DIR)/config.h $(SRC_DIR)
 	$(CC) $(CPPFLAGS) $(VECTOR_CFLAGS) -c $< -o $@
 
 $(TRAIN_SCALAR_BIN): $(SCALAR_TRAIN_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_TRAIN_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_TRAIN_OBJS) $(LDFLAGS) $(STATIC_LIBS) $(ENDFILES)
 
 $(VERIFY_SCALAR_BIN): $(SCALAR_VERIFY_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_VERIFY_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(SCALAR_VERIFY_OBJS) $(LDFLAGS) $(STATIC_LIBS) $(ENDFILES)
 
 $(TRAIN_VECTOR_BIN): $(VECTOR_TRAIN_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_TRAIN_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_TRAIN_OBJS) $(LDFLAGS) $(STATIC_LIBS) $(ENDFILES)
 
 $(VERIFY_VECTOR_BIN): $(VECTOR_VERIFY_OBJS) | $(BIN_DIR)
-	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_VERIFY_OBJS) $(LDFLAGS) $(LDLIBS) $(LIBGCC) $(ENDFILES)
+	$(CC) -nostdlib -nostartfiles -o $@ $(STARTFILES) $(VECTOR_VERIFY_OBJS) $(LDFLAGS) $(STATIC_LIBS) $(ENDFILES)
