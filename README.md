@@ -64,7 +64,7 @@ make train
 训练结束后会生成 `src/model_params.h`，随后 `verify` 会自动使用这份 CNN 参数。
 训练过程中会在终端按 batch 刷新当前 epoch 的进度和 batch loss。
 
-### 4. 随机验证
+### 4. 验证与基准
 
 ```bash
 make verify
@@ -76,6 +76,38 @@ make verify
 - 在终端打印字符画
 - 输出真实标签和预测标签
 - 显示 `CORRECT` 或 `WRONG`
+
+也可以指定测试集中的固定样本下标：
+
+```bash
+./bin/verify --sample 0
+./bin/verify --sample 1234
+```
+
+这里的“固定样本”表示本次运行固定选择测试集中的第 `INDEX` 张图片，而不是把程序永久写死成只验证某一张图。
+
+如果想直接评估一段测试集上的准确率，可以指定从 `0` 到 `INDEX` 的所有图片：
+
+```bash
+./bin/verify --num 999
+```
+
+这个模式下不会打印字符画和单张图片预测结果，只会输出验证范围、样本数和准确率。
+
+如需做更稳定的 RISC-V scalar/vector 对比，可以对同一张图片重复推理多次：
+
+```bash
+./bin/verify --sample 0 --repeat 1000
+```
+
+说明：
+
+- `--sample INDEX` 固定验证测试集中的第 `INDEX` 张图片
+- `--repeat COUNT` 对同一张图片重复推理 `COUNT` 次
+- `--num INDEX` 验证测试集从 `0` 到 `INDEX` 的全部图片，并输出准确率
+- 不传 `--sample` 时，默认仍然随机抽取一张图片
+- `--num` 不能与 `--sample` 或 `--repeat` 同时使用
+- RISC-V 版本的 `instret` 统计范围已缩小到 `network_predict()`，更适合比较推理路径的 RVV 加速效果
 
 ### 5. RISC-V 交叉编译
 
@@ -143,10 +175,24 @@ spike pk bin-riscv/train-scalar.elf
 spike pk bin-riscv/train-vector.elf
 ```
 
+如需对比同一张图片在标量版和向量版上的指令数，可分别运行：
+
+```bash
+spike pk bin-riscv/verify-scalar.elf --sample 0 --repeat 1000
+spike pk bin-riscv/verify-vector.elf --sample 0 --repeat 1000
+```
+
+如需对比一段测试集上的准确率，也可以分别运行：
+
+```bash
+spike pk bin-riscv/verify-scalar.elf --num 999
+spike pk bin-riscv/verify-vector.elf --num 999
+```
+
 ## 可执行文件
 
 - `bin/train`：训练模型并导出参数头文件
-- `bin/verify`：随机验证一张测试图片
+- `bin/verify`：验证测试图片，支持随机抽样、固定样本或区间准确率评估
 - `bin-riscv/train-scalar.elf`：RISC-V 标量版训练程序
 - `bin-riscv/verify-scalar.elf`：RISC-V 标量版验证程序
 - `bin-riscv/train-vector.elf`：RISC-V 向量版训练程序
@@ -167,4 +213,6 @@ make -f Makefile.riscv clean
 - 如需调整训练轮数、batch size、学习率或随机种子，请编辑 `src/config.h`
 - 默认目标是“项目尽量精简且好用”，因此实现上保持为最小可维护版本
 - `Makefile.riscv` 是独立扩展入口，用于保留现有 Makefile 的同时提供 RISC-V 交叉编译能力
-- RISC-V 版本会在 `train` 与 `verify` 的 `main` 前后读取 `instret` CSR，并打印 `instret delta (main)`
+- `verify` 支持 `--sample INDEX` 和 `--repeat COUNT`，便于固定样本并重复推理做基准测试
+- `verify` 支持 `--num INDEX`，可对测试集 `0..INDEX` 批量评估并输出准确率
+- RISC-V 版本的 `verify` 会在 `network_predict()` 前后读取 `instret` CSR，并打印单次或平均推理指令数
